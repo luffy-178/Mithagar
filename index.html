@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mithagar Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: one-screen phone chat. Header with today's conditions, scrolling thread, quick replies, input. */
+  --bg:#e9eef1;        /* pale sky reflected in a flooded pan */
+  --surface:#ffffff;   /* salt */
+  --ink:#1d2b33;       /* wet clay slate */
+  --muted:#5c6c75;
+  --line:#cfd8dd;
+  --accent:#a8325f;    /* brine pink of a concentrating pan */
+  --accent-ink:#ffffff;
+  --user:#dbe7ec;
+  --good:#1f7a4d; --warn:#a86400; --bad:#b3261e;
+  --good-bg:#e0f2e8; --warn-bg:#fbefd6; --bad-bg:#fbe3e1;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121a1f; --surface:#1c272e; --ink:#e6edf0; --muted:#9aaab3; --line:#32424b;
+    --accent:#e07aa0; --accent-ink:#1a0d13; --user:#2a3a43;
+    --good:#6fd09a; --warn:#f0b65a; --bad:#f28b82;
+    --good-bg:#173326; --warn-bg:#3a2c10; --bad-bg:#3d1c1a;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121a1f; --surface:#1c272e; --ink:#e6edf0; --muted:#9aaab3; --line:#32424b;
+  --accent:#e07aa0; --accent-ink:#1a0d13; --user:#2a3a43;
+  --good:#6fd09a; --warn:#f0b65a; --bad:#f28b82;
+  --good-bg:#173326; --warn-bg:#3a2c10; --bad-bg:#3d1c1a;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
+.app{height:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;background:var(--bg)}
+header{padding:12px 16px 10px;border-bottom:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+h1{font-family:var(--display);font-size:1.35rem;margin:0;letter-spacing:-0.01em}
+.proto{font-size:.75rem;color:var(--muted)}
+.cond{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{font-size:.8rem;padding:3px 8px;border:1px solid var(--line);border-radius:999px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip b{font-weight:600}
+button{font:inherit;color:inherit;cursor:pointer}
+.link{background:none;border:0;color:var(--accent);font-weight:600;font-size:.85rem;padding:4px 6px;text-decoration:underline;text-underline-offset:3px}
+.panel{display:none;grid-template-columns:1fr 1fr;gap:10px;padding-top:4px}
+.panel.open{display:grid}
+.panel label{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted)}
+.panel input,.panel select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 8px;width:100%}
+.panel .full{grid-column:1/-1;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.note{font-size:.75rem;color:var(--muted)}
+.thread{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:88%;padding:10px 12px;border-radius:14px;overflow-wrap:anywhere}
+.bot{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:4px}
+.me{align-self:flex-end;background:var(--user);border-bottom-right-radius:4px}
+.msg p{margin:0 0 6px}.msg p:last-child{margin-bottom:0}
+.msg ul{margin:4px 0 6px;padding-left:18px}
+.pill{display:inline-block;font-weight:600;font-size:.8rem;padding:2px 9px;border-radius:999px;margin-bottom:6px}
+.pill.good{background:var(--good-bg);color:var(--good)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.big{font-family:var(--display);font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.gauge{margin:8px 0 4px}
+.bar{position:relative;display:flex;height:12px;border-radius:6px;overflow:hidden;border:1px solid var(--line)}
+.bar span{display:block;height:100%}
+.z1{background:#9fc3d4}.z2{background:#d9b6a6}.z3{background:#d88aa6}.z4{background:var(--accent)}.z5{background:#6b5a3a}
+.mark{position:relative;height:10px}
+.mark i{position:absolute;top:0;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:9px solid var(--ink);transform:translateX(-6px)}
+.scale{display:flex;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.scale span{overflow:hidden;white-space:nowrap}
+table{border-collapse:collapse;font-size:.82rem;font-variant-numeric:tabular-nums;width:100%}
+td,th{text-align:left;padding:3px 8px 3px 0;border-bottom:1px solid var(--line)}
+.quick{display:flex;gap:8px;padding:8px 16px;overflow-x:auto;border-top:1px solid var(--line);background:var(--surface)}
+.quick button{flex:none;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:7px 12px;font-size:.85rem;font-weight:500}
+form.send{display:flex;gap:8px;padding:8px 16px 14px;background:var(--surface)}
+form.send input{flex:1;min-width:0;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:10px 14px}
+form.send button,.apply{background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:9px 16px;font-weight:600}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="top">
+      <h1>Mithagar Assistant</h1>
+      <span class="proto">Prototype, example weather</span>
+    </div>
+    <div class="cond" id="cond"></div>
+    <div class="panel" id="panel">
+      <label for="in-temp">Day temperature (°C)<input id="in-temp" type="number" inputmode="decimal" min="15" max="45" step="0.5"></label>
+      <label for="in-rh">Humidity (%)<input id="in-rh" type="number" inputmode="decimal" min="10" max="100" step="1"></label>
+      <label for="in-wind">Wind (km/h)<input id="in-wind" type="number" inputmode="decimal" min="0" max="60" step="1"></label>
+      <label for="in-sky">Sky<select id="in-sky"><option value="clear">Clear</option><option value="partly">Partly cloudy</option><option value="cloudy">Cloudy</option></select></label>
+      <label for="in-rain">Rain next 24 h (mm)<input id="in-rain" type="number" inputmode="decimal" min="0" max="200" step="1"></label>
+      <label for="in-depth">Brine depth in pan (cm)<input id="in-depth" type="number" inputmode="decimal" min="1" max="30" step="0.5"></label>
+      <div class="full"><span class="note">In the live bot these come from a weather forecast automatically.</span><button type="button" class="apply" id="apply">Update advice</button></div>
+    </div>
+  </header>
+  <div class="thread" id="thread" aria-live="polite"></div>
+  <div class="quick" id="quick">
+    <button type="button" data-q="today">Today's advice</button>
+    <button type="button" data-q="brine">Brine reading</button>
+    <button type="button" data-q="rain">Rain coming?</button>
+    <button type="button" data-q="tide">Tide</button>
+    <button type="button" data-q="log">My readings</button>
+    <button type="button" data-q="help">Help</button>
+  </div>
+  <form class="send" id="send">
+    <input id="text" autocomplete="off" placeholder="Type a brine reading, e.g. 24" aria-label="Message">
+    <button type="submit">Send</button>
+  </form>
+</div>
+<script>
+//LOGIC-START
+// Saturation vapour pressure, hPa
+function es(T){return 6.108*Math.exp(17.27*T/(T+237.3));}
+// Open-water evaporation, mm/day (simplified Penman 1948 combination equation)
+function evapFresh(w){
+  var T=w.temp-3;                       // rough daily mean from day temperature
+  var e=es(T), ea=e*w.rh/100;
+  var delta=4098*e/Math.pow(T+237.3,2), gamma=0.665;
+  var Rs={clear:22,partly:17,cloudy:10}[w.sky];      // MJ/m2/day, Goa dry season
+  var Rnl={clear:4.5,partly:3,cloudy:1.5}[w.sky];
+  var Rn=0.92*Rs-Rnl;
+  var u2=w.wind/3.6*0.75;               // 10 m wind in km/h to 2 m wind in m/s
+  var Ea=0.26*(1+0.54*u2)*(e-ea);
+  return Math.max(0,(delta/(delta+gamma))*Rn/2.45+(gamma/(delta+gamma))*Ea);
+}
+// Brine evaporates slower than fresh water (water activity falls to ~0.75 at salt saturation)
+function brineFactor(be){return Math.max(0.6,1-0.01*be);}
+function sg(be){return 145/(145-be);}
+function beFromSg(s){return 145-145/s;}
+// Salt is conserved, so depth x (SG-1) stays roughly constant
+function depthAt(d,be,target){return d*(sg(be)-1)/(sg(target)-1);}
+function daysTo(be,target,depthMm,w){
+  if(target<=be) return 0;
+  var need=depthMm-depthAt(depthMm,be,target);
+  var rate=evapFresh(w)*brineFactor((be+target)/2)-w.rain;
+  return rate<=0.2?Infinity:need/rate;
+}
+function afterRain(be,depthMm,rain){return beFromSg(1+(sg(be)-1)*depthMm/(depthMm+rain));}
+function stage(be){
+  if(be<10) return {k:"reservoir",name:"Reservoir stage",next:10};
+  if(be<24) return {k:"condenser",name:"Condenser stage",next:24};
+  if(be<25.5) return {k:"transfer",name:"Ready to transfer",next:25.5};
+  if(be<=29) return {k:"crystal",name:"Salt is forming",next:29};
+  return {k:"bittern",name:"Bittern",next:null};
+}
+// Moon age in days since new moon; spring tides follow new and full moon by about a day
+function moonAge(d){
+  var syn=29.530588853, ref=Date.UTC(2000,0,6,18,14);
+  var a=((d.getTime()-ref)/86400000)%syn; return a<0?a+syn:a;
+}
+function tideInfo(d){
+  var syn=29.530588853, a=moonAge(d), half=syn/2;
+  var sinceSyzygy=a%half;               // days since last new or full moon
+  var lag=1.5;
+  var spring=(sinceSyzygy>=lag-2&&sinceSyzygy<=lag+2)||sinceSyzygy>half-0.5;
+  var toNext=sinceSyzygy<=lag?lag-sinceSyzygy:half-sinceSyzygy+lag;
+  return {spring:spring,daysToSpring:Math.round(toNext),phase:(a<syn/4||a>syn*3/4)?"new":"full"};
+}
+//LOGIC-END
+
+var W={temp:32,rh:60,wind:12,sky:"clear",rain:0,depth:5};
+var lastBe=null, waiting=null;
+var $=function(id){return document.getElementById(id);};
+var thread=$("thread");
+function r1(x){return (Math.round(x*10)/10).toFixed(1);}
+function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+function bot(html){var m=document.createElement("div");m.className="msg bot";m.innerHTML=html;thread.appendChild(m);thread.scrollTop=thread.scrollHeight;}
+function me(t){var m=document.createElement("div");m.className="msg me";m.textContent=t;thread.appendChild(m);thread.scrollTop=thread.scrollHeight;}
+function loadLog(){try{return JSON.parse(localStorage.getItem("mithagar-log")||"[]");}catch(e){return [];}}
+function saveLog(l){try{localStorage.setItem("mithagar-log",JSON.stringify(l.slice(-30)));}catch(e){}}
+function daysText(d){return d===Infinity?"more days than I can estimate, because rain outweighs drying":d<1?"less than 1 day":"about "+Math.ceil(d)+(Math.ceil(d)===1?" day":" days");}
+
+function renderCond(){
+  var sky={clear:"Clear",partly:"Partly cloudy",cloudy:"Cloudy"}[W.sky];
+  $("cond").innerHTML='<span class="chip"><b>'+W.temp+'</b> °C</span><span class="chip"><b>'+W.rh+'</b>% humid</span><span class="chip">Wind <b>'+W.wind+'</b> km/h</span><span class="chip">'+sky+'</span><span class="chip">Rain <b>'+W.rain+'</b> mm</span><span class="chip">Pan <b>'+W.depth+'</b> cm</span><button type="button" class="link" id="change">Change</button>';
+  $("change").onclick=function(){$("panel").classList.toggle("open");};
+}
+function fillPanel(){$("in-temp").value=W.temp;$("in-rh").value=W.rh;$("in-wind").value=W.wind;$("in-sky").value=W.sky;$("in-rain").value=W.rain;$("in-depth").value=W.depth;}
+function num(id,lo,hi,def){var v=parseFloat($(id).value);return isNaN(v)?def:Math.min(hi,Math.max(lo,v));}
+
+function tideLine(){
+  var t=tideInfo(new Date());
+  return t.spring
+    ? "Spring tides now ("+t.phase+" moon). High water reaches furthest, so this is the time to take in seawater."
+    : "Neap tides now. Intake water is low. Next spring tides in about "+t.daysToSpring+(t.daysToSpring===1?" day.":" days.");
+}
+function rainAdvice(){
+  var r=W.rain, st=lastBe===null?null:stage(lastBe).k;
+  if(r<1) return "<p>No rain expected in the next 24 hours. Carry on as normal.</p>";
+  var h='<span class="pill '+(r>=10?"bad":"warn")+'">Rain '+r+' mm expected</span>';
+  if(st==="crystal"||st==="bittern") h+="<p>Scrape and heap the salt today. Cover the heaps. Close the inlet so runoff stays out of the crystallising pans.</p>";
+  else if(st) h+="<p>Hold your strong brine in the deepest pan so rain dilutes it least. Do not move brine to the crystallising pans until the rain has passed.</p>";
+  else h+="<p>Heap and cover any salt in the pans. Keep strong brine in the deepest pan. Send me your brine reading for advice on your pan.</p>";
+  if(lastBe!==null){var nb=afterRain(lastBe,W.depth*10,r);h+="<p>This rain would dilute your "+W.depth+" cm of brine from "+r1(lastBe)+" to about "+r1(nb)+" °Bé.</p>";}
+  return h;
+}
+function today(){
+  var e=evapFresh(W), cls, label;
+  if(W.rain>=5){cls="bad";label="Rain risk";}
+  else if(e>=6&&W.rain<1){cls="good";label="Good salt day";}
+  else if(e>=3){cls="warn";label="Slow drying day";}
+  else{cls="bad";label="Poor drying day";}
+  var h='<span class="pill '+cls+'">'+label+'</span><p>Drying today</p><p class="big">'+r1(e)+' mm</p><p class="note">of water lost from a fresh pan. Strong brine dries about a quarter slower.</p>';
+  if(W.rain>=1) h+=rainAdvice();
+  h+="<p>"+tideLine()+"</p>";
+  h+=lastBe===null?"<p>Send me your brine reading in °Bé for advice on your pan.</p>":"<p>Your last reading was "+r1(lastBe)+" °Bé. Send a new one to update.</p>";
+  bot(h);
+}
+function gauge(be){
+  var p=Math.min(100,be/32*100);
+  return '<div class="gauge"><div class="mark"><i style="left:'+p+'%"></i></div><div class="bar"><span class="z1" style="width:31.25%"></span><span class="z2" style="width:43.75%"></span><span class="z3" style="width:4.7%"></span><span class="z4" style="width:10.9%"></span><span class="z5" style="width:9.45%"></span></div><div class="scale"><span style="width:31.25%">0 reservoir</span><span style="width:43.75%">10 condenser</span><span style="width:25%">24 salt 29</span></div></div>';
+}
+function brine(be){
+  lastBe=be; var s=stage(be), d=W.depth*10, h, act;
+  var cls=s.k==="bittern"?"bad":(s.k==="crystal"||s.k==="transfer")?"good":"warn";
+  h='<span class="pill '+cls+'">'+s.name+'</span><p class="big">'+r1(be)+' °Bé</p>'+gauge(be);
+  if(s.k==="reservoir") act="Keep this water in the reservoir pan and let it dry. It reaches 10 °Bé in "+daysText(daysTo(be,10,d,W))+".";
+  else if(s.k==="condenser") act="Keep it in the condenser pan. Gypsum settles out at this stage, which keeps the salt clean. It reaches 24 °Bé in "+daysText(daysTo(be,24,d,W))+".";
+  else if(s.k==="transfer") act="Move this brine to the crystallising pan now. Salt starts forming at 25.5 °Bé, in "+daysText(daysTo(be,25.5,d,W))+".";
+  else if(s.k==="crystal") act="Salt is forming. Do not add weak brine. Rake and harvest when the crust is thick. Drain the pan before it passes 29 °Bé, in "+daysText(daysTo(be,29,d,W))+".";
+  else act="Drain this bittern now. Above 29 °Bé magnesium salts come out and make the salt bitter and damp. Refill with fresh strong brine at 24 to 25 °Bé.";
+  h+="<p>"+act+"</p>";
+  if(W.rain>=1&&s.k!=="bittern") h+="<p>Rain of "+W.rain+" mm is expected. It would dilute this pan to about "+r1(afterRain(be,d,W.rain))+" °Bé."+(s.k==="crystal"?" Harvest and cover the salt first.":"")+"</p>";
+  bot(h);
+  var l=loadLog();l.push({t:Date.now(),be:be,depth:W.depth});saveLog(l);
+}
+function showLog(){
+  var l=loadLog();
+  if(!l.length){bot("<p>No readings saved yet. Send a brine reading and I will keep it here.</p>");return;}
+  var rows=l.slice(-7).reverse().map(function(x){var d=new Date(x.t);return "<tr><td>"+d.toLocaleDateString(undefined,{day:"numeric",month:"short"})+" "+d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})+"</td><td>"+r1(x.be)+" °Bé</td><td>"+stage(x.be).name+"</td></tr>";}).join("");
+  bot("<p>Your last readings, saved on this phone only:</p><table><tr><th>When</th><th>Brine</th><th>Stage</th></tr>"+rows+"</table>");
+}
+function help(){
+  bot("<p>I help you decide what to do in the salt pan each day.</p><ul><li>Tap <b>Today's advice</b> for drying, rain and tide.</li><li>Type your brine reading from the hydrometer, such as <b>24</b>.</li><li>Type <b>rain 10</b> if 10 mm of rain is forecast.</li><li>Tap <b>Change</b> at the top to set the weather and pan depth.</li></ul>");
+}
+function handle(text){
+  var t=text.toLowerCase().trim(), m=t.match(/-?\d+(\.\d+)?/), n=m?parseFloat(m[0]):null;
+  if(/rain/.test(t)){
+    if(n!==null){W.rain=Math.min(200,Math.max(0,n));renderCond();fillPanel();}
+    bot(rainAdvice());waiting=null;return;
+  }
+  if(n!==null&&(waiting==="brine"||/brine|b[eé]|density|reading/.test(t)||/^[\d.\s°]+(b[eé])?$/.test(t))){
+    waiting=null;
+    if(n<0||n>36){bot("<p>That reading looks wrong. A hydrometer in a salt pan reads between 0 and 36 °Bé. Check it and send it again.</p>");return;}
+    brine(n);return;
+  }
+  if(/brine|reading|density/.test(t)){waiting="brine";bot("<p>Dip the hydrometer in the pan and send me the number, for example <b>24</b>.</p>");return;}
+  if(/tide|sluice|gate|intake/.test(t)){bot("<p>"+tideLine()+"</p><p class=\"note\">Spring and neap come from the moon's phase. Exact high-water times will come from the Mormugao tide table in the live bot.</p>");return;}
+  if(/today|advice|weather|dry/.test(t)){today();return;}
+  if(/log|history|my readings/.test(t)){showLog();return;}
+  if(/help|hi|hello|namaskar|start/.test(t)){help();return;}
+  bot("<p>I did not understand that. Send a brine reading such as <b>24</b>, or tap one of the buttons below.</p>");
+}
+$("quick").addEventListener("click",function(ev){
+  var b=ev.target.closest("button");if(!b)return;
+  var q=b.dataset.q;me(b.textContent);
+  if(q==="today")today();else if(q==="brine")handle("brine");else if(q==="rain")bot(rainAdvice());
+  else if(q==="tide")handle("tide");else if(q==="log")showLog();else help();
+});
+$("send").addEventListener("submit",function(ev){
+  ev.preventDefault();var v=$("text").value.trim();if(!v)return;
+  $("text").value="";me(v);handle(v);
+});
+$("apply").addEventListener("click",function(){
+  W.temp=num("in-temp",15,45,W.temp);W.rh=num("in-rh",10,100,W.rh);W.wind=num("in-wind",0,60,W.wind);
+  W.sky=$("in-sky").value;W.rain=num("in-rain",0,200,W.rain);W.depth=num("in-depth",1,30,W.depth);
+  renderCond();fillPanel();$("panel").classList.remove("open");
+  me("Weather updated");today();
+});
+renderCond();fillPanel();
+bot("<p>Namaskar. I am the Mithagar Assistant. Here is today's advice for your salt pan, using example weather. Tap <b>Change</b> at the top to enter your own.</p>");
+today();
+</script>
+</body>
+</html>
