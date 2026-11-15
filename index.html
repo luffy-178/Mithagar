@@ -91,7 +91,7 @@ form.send button,.apply{background:var(--accent);color:var(--accent-ink);border:
   <header>
     <div class="top">
       <h1>Mithagar Assistant</h1>
-      <span class="proto">Prototype, example weather</span>
+      <span class="proto" id="src">Example weather</span>
     </div>
     <div class="cond" id="cond"></div>
     <div class="panel" id="panel">
@@ -101,7 +101,7 @@ form.send button,.apply{background:var(--accent);color:var(--accent-ink);border:
       <label for="in-sky">Sky<select id="in-sky"><option value="clear">Clear</option><option value="partly">Partly cloudy</option><option value="cloudy">Cloudy</option></select></label>
       <label for="in-rain">Rain next 24 h (mm)<input id="in-rain" type="number" inputmode="decimal" min="0" max="200" step="1"></label>
       <label for="in-depth">Brine depth in pan (cm)<input id="in-depth" type="number" inputmode="decimal" min="1" max="30" step="0.5"></label>
-      <div class="full"><span class="note">In the live bot these come from a weather forecast automatically.</span><button type="button" class="apply" id="apply">Update advice</button></div>
+      <div class="full"><span class="note">Filled from the forecast when it is available. Change any value to test your own.</span><button type="button" class="apply" id="apply">Update advice</button></div>
     </div>
   </header>
   <div class="thread" id="thread" aria-live="polite"></div>
@@ -124,10 +124,10 @@ form.send button,.apply{background:var(--accent);color:var(--accent-ink);border:
 function es(T){return 6.108*Math.exp(17.27*T/(T+237.3));}
 // Open-water evaporation, mm/day (simplified Penman 1948 combination equation)
 function evapFresh(w){
-  var T=w.temp-3;                       // rough daily mean from day temperature
+  var T=(w.tmean!=null)?w.tmean:w.temp-3;   // forecast daily mean, or a rough one from day temperature
   var e=es(T), ea=e*w.rh/100;
   var delta=4098*e/Math.pow(T+237.3,2), gamma=0.665;
-  var Rs={clear:22,partly:17,cloudy:10}[w.sky];      // MJ/m2/day, Goa dry season
+  var Rs=(w.rs!=null)?w.rs:{clear:22,partly:17,cloudy:10}[w.sky];   // MJ/m2/day, forecast or Goa dry-season value
   var Rnl={clear:4.5,partly:3,cloudy:1.5}[w.sky];
   var Rn=0.92*Rs-Rnl;
   var u2=w.wind/3.6*0.75;               // 10 m wind in km/h to 2 m wind in m/s
@@ -169,7 +169,8 @@ function tideInfo(d){
 }
 //LOGIC-END
 
-var W={temp:32,rh:60,wind:12,sky:"clear",rain:0,depth:5};
+var W={temp:32,rh:60,wind:12,sky:"clear",rain:0,depth:5,tmean:null,rs:null};
+var PAN={lat:15.50,lon:73.88,name:"Goa salt pans"};
 var lastBe=null, waiting=null;
 var $=function(id){return document.getElementById(id);};
 var thread=$("thread");
@@ -275,12 +276,40 @@ $("send").addEventListener("submit",function(ev){
 $("apply").addEventListener("click",function(){
   W.temp=num("in-temp",15,45,W.temp);W.rh=num("in-rh",10,100,W.rh);W.wind=num("in-wind",0,60,W.wind);
   W.sky=$("in-sky").value;W.rain=num("in-rain",0,200,W.rain);W.depth=num("in-depth",1,30,W.depth);
+  W.tmean=null;W.rs=null;$("src").textContent="Your own weather";
   renderCond();fillPanel();$("panel").classList.remove("open");
   me("Weather updated");today();
 });
+function loadLive(){
+  var url="https://api.open-meteo.com/v1/forecast?latitude="+PAN.lat+"&longitude="+PAN.lon+
+    "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,shortwave_radiation,precipitation&forecast_hours=24&timezone=Asia%2FKolkata";
+  return fetch(url).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).then(function(j){
+    var h=j.hourly;
+    function vals(k){return h[k].filter(function(x){return x!==null&&x!==undefined;});}
+    function sum(a){return a.reduce(function(p,c){return p+c;},0);}
+    var t=vals("temperature_2m"),rh=vals("relative_humidity_2m"),wd=vals("wind_speed_10m");
+    if(!t.length||!rh.length||!wd.length)throw new Error("empty forecast");
+    W.tmean=sum(t)/t.length;
+    W.temp=Math.round(Math.max.apply(null,t));
+    W.rh=Math.round(sum(rh)/rh.length);
+    W.wind=Math.round(sum(wd)/wd.length);                    // km/h
+    W.rs=sum(vals("shortwave_radiation"))*3600/1e6;          // hourly W/m2 to MJ/m2 over 24 h
+    W.rain=Math.round(sum(vals("precipitation"))*10)/10;
+    W.sky=W.rs>=19?"clear":W.rs>=13?"partly":"cloudy";
+  });
+}
 renderCond();fillPanel();
-bot("<p>Namaskar. I am the Mithagar Assistant. Here is today's advice for your salt pan, using example weather. Tap <b>Change</b> at the top to enter your own.</p>");
-today();
+bot("<p>Namaskar. I am the Mithagar Assistant. Getting the forecast for the "+PAN.name+"…</p>");
+loadLive().then(function(){
+  $("src").textContent="Live forecast, next 24 h";
+  renderCond();fillPanel();
+  bot("<p>Here is today's advice from the live forecast for the "+PAN.name+".</p>");
+  today();
+}).catch(function(){
+  $("src").textContent="Example weather";
+  bot("<p>I could not get the forecast, so this advice uses example weather. Check your internet, or tap <b>Change</b> at the top to enter the weather yourself.</p>");
+  today();
+});
 </script>
 </body>
 </html>
