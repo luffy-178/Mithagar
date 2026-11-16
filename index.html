@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mithagar Assistant</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#a8325f">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -84,6 +88,16 @@ form.send{display:flex;gap:8px;padding:8px 16px 14px;background:var(--surface)}
 form.send input{flex:1;min-width:0;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:10px 14px}
 form.send button,.apply{background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:9px 16px;font-weight:600}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mapview{display:none;position:fixed;inset:0;z-index:2000;background:var(--bg);flex-direction:column}
+.mapview.open{display:flex}
+.mapbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.mapbar.foot{border-bottom:0;border-top:1px solid var(--line)}
+.mapbar h2{font-family:var(--display);font-size:1.1rem;margin:0}
+.mapbar .btns{display:flex;flex-wrap:wrap;gap:8px}
+.ghost{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:.85rem}
+#map{flex:1;min-height:0;background:var(--line)}
+#maphelp{font-size:.82rem;color:var(--muted);flex:1 1 200px}
+#area{font-weight:600;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -118,6 +132,18 @@ form.send button,.apply{background:var(--accent);color:var(--accent-ink);border:
     <button type="submit">Send</button>
   </form>
 </div>
+<div class="mapview" id="mapview">
+  <div class="mapbar">
+    <h2>My pan on the map</h2>
+    <div class="btns"><button type="button" class="ghost" id="locate">Go to my location</button><button type="button" class="ghost" id="closemap">Close</button></div>
+  </div>
+  <div id="map"></div>
+  <div class="mapbar foot">
+    <span id="maphelp">Tap each corner of your pan in turn. <span id="area"></span></span>
+    <div class="btns"><button type="button" class="ghost" id="undo">Undo</button><button type="button" class="ghost" id="clear">Clear</button><button type="button" class="apply" id="savepan">Save pan</button></div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 //LOGIC-START
 // Saturation vapour pressure, hPa
@@ -167,10 +193,26 @@ function tideInfo(d){
   var toNext=sinceSyzygy<=lag?lag-sinceSyzygy:half-sinceSyzygy+lag;
   return {spring:spring,daysToSpring:Math.round(toNext),phase:(a<syn/4||a>syn*3/4)?"new":"full"};
 }
+// Area in m2 of a small polygon given as [[lat,lon],...] (local flat projection, shoelace)
+function polyArea(p){
+  if(p.length<3) return 0;
+  var R=6371000, k=Math.PI/180, lat0=p[0][0]*k, a=0;
+  for(var i=0;i<p.length;i++){
+    var q=p[(i+1)%p.length];
+    var x1=R*(p[i][1]-p[0][1])*k*Math.cos(lat0), y1=R*(p[i][0]-p[0][0])*k;
+    var x2=R*(q[1]-p[0][1])*k*Math.cos(lat0), y2=R*(q[0]-p[0][0])*k;
+    a+=x1*y2-x2*y1;
+  }
+  return Math.abs(a)/2;
+}
+// Common salt (kg) held in the brine: volume x dissolved salts (about 1500 kg/m3 per unit of SG-1) x NaCl share 0.78
+function saltKg(areaM2,depthMm,be){return areaM2*depthMm/1000*(sg(be)-1)*1500*0.78;}
 //LOGIC-END
 
 var W={temp:32,rh:60,wind:12,sky:"clear",rain:0,depth:5,tmean:null,rs:null};
-var PAN={lat:15.50,lon:73.88,name:"Goa salt pans"};
+var PAN={lat:15.50,lon:73.88,name:"Goa salt pans",area:0,pts:[]};
+function loadPan(){try{return JSON.parse(localStorage.getItem("mithagar-pan")||"null");}catch(e){return null;}}
+(function(){var s=loadPan();if(s&&s.pts&&s.pts.length){PAN.lat=s.lat;PAN.lon=s.lon;PAN.area=s.area||0;PAN.pts=s.pts;PAN.name="your pan";}})();
 var lastBe=null, waiting=null;
 var $=function(id){return document.getElementById(id);};
 var thread=$("thread");
@@ -184,7 +226,8 @@ function daysText(d){return d===Infinity?"more days than I can estimate, because
 
 function renderCond(){
   var sky={clear:"Clear",partly:"Partly cloudy",cloudy:"Cloudy"}[W.sky];
-  $("cond").innerHTML='<span class="chip"><b>'+W.temp+'</b> °C</span><span class="chip"><b>'+W.rh+'</b>% humid</span><span class="chip">Wind <b>'+W.wind+'</b> km/h</span><span class="chip">'+sky+'</span><span class="chip">Rain <b>'+W.rain+'</b> mm</span><span class="chip">Pan <b>'+W.depth+'</b> cm</span><button type="button" class="link" id="change">Change</button>';
+  $("cond").innerHTML='<span class="chip"><b>'+W.temp+'</b> °C</span><span class="chip"><b>'+W.rh+'</b>% humid</span><span class="chip">Wind <b>'+W.wind+'</b> km/h</span><span class="chip">'+sky+'</span><span class="chip">Rain <b>'+W.rain+'</b> mm</span><span class="chip">Pan <b>'+W.depth+'</b> cm'+(PAN.area?' · <b>'+Math.round(PAN.area)+'</b> m²':'')+'</span><button type="button" class="link" id="change">Change</button><button type="button" class="link" id="openmap">My pan on map</button><button type="button" class="link" id="install" hidden>Install app</button>';
+  $("openmap").onclick=openMap;$("install").hidden=!deferredInstall;$("install").onclick=doInstall;
   $("change").onclick=function(){$("panel").classList.toggle("open");};
 }
 function fillPanel(){$("in-temp").value=W.temp;$("in-rh").value=W.rh;$("in-wind").value=W.wind;$("in-sky").value=W.sky;$("in-rain").value=W.rain;$("in-depth").value=W.depth;}
@@ -232,6 +275,7 @@ function brine(be){
   else if(s.k==="crystal") act="Salt is forming. Do not add weak brine. Rake and harvest when the crust is thick. Drain the pan before it passes 29 °Bé, in "+daysText(daysTo(be,29,d,W))+".";
   else act="Drain this bittern now. Above 29 °Bé magnesium salts come out and make the salt bitter and damp. Refill with fresh strong brine at 24 to 25 °Bé.";
   h+="<p>"+act+"</p>";
+  if(PAN.area&&be<25.5){var kg=saltKg(PAN.area,d,be);h+="<p>Your pan of "+Math.round(PAN.area)+" m² holds enough brine for up to about <b>"+(kg>=100?Math.round(kg/10)*10:Math.round(kg))+" kg</b> of salt at this depth.</p>";}
   if(W.rain>=1&&s.k!=="bittern") h+="<p>Rain of "+W.rain+" mm is expected. It would dilute this pan to about "+r1(afterRain(be,d,W.rain))+" °Bé."+(s.k==="crystal"?" Harvest and cover the salt first.":"")+"</p>";
   bot(h);
   var l=loadLog();l.push({t:Date.now(),be:be,depth:W.depth});saveLog(l);
@@ -298,18 +342,87 @@ function loadLive(){
     W.sky=W.rs>=19?"clear":W.rs>=13?"partly":"cloudy";
   });
 }
+var deferredInstall=null;
+window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();deferredInstall=e;var b=$("install");if(b)b.hidden=false;});
+function doInstall(){if(!deferredInstall)return;deferredInstall.prompt();deferredInstall=null;$("install").hidden=true;}
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(function(){});}
+
+var map=null, pts=[], shape=null, dots=null;
+function drawPan(){
+  dots.clearLayers();
+  pts.forEach(function(p){L.circleMarker(p,{radius:6,color:"#ffffff",weight:2,fillColor:"#a8325f",fillOpacity:1}).addTo(dots);});
+  if(shape){map.removeLayer(shape);shape=null;}
+  if(pts.length>=3)shape=L.polygon(pts,{color:"#e07aa0",weight:3,fillOpacity:0.25}).addTo(map);
+  else if(pts.length===2)shape=L.polyline(pts,{color:"#e07aa0",weight:3}).addTo(map);
+  $("area").textContent=pts.length>=3?"Area: "+Math.round(polyArea(pts))+" m²":pts.length?pts.length+" point"+(pts.length>1?"s":"")+" marked":"";
+}
+function openMap(){
+  $("mapview").classList.add("open");
+  if(!window.L){$("maphelp").textContent="The map needs an internet connection. Connect and open it again.";return;}
+  if(!map){
+    map=L.map("map").setView([PAN.lat,PAN.lon],PAN.pts.length?17:14);
+    var sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:20,maxNativeZoom:18,attribution:"Imagery © Esri, Maxar, Earthstar Geographics"});
+    var osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:20,maxNativeZoom:19,attribution:"© OpenStreetMap contributors"});
+    sat.addTo(map);L.control.layers({"Satellite":sat,"Street map":osm}).addTo(map);
+    dots=L.layerGroup().addTo(map);
+    map.on("click",function(e){pts.push([e.latlng.lat,e.latlng.lng]);drawPan();});
+    pts=PAN.pts.slice();drawPan();
+    if(pts.length>1)map.fitBounds(L.latLngBounds(pts).pad(0.6));
+  }
+  setTimeout(function(){map.invalidateSize();},60);
+}
+$("closemap").onclick=function(){$("mapview").classList.remove("open");};
+$("undo").onclick=function(){if(map){pts.pop();drawPan();}};
+$("clear").onclick=function(){if(map){pts=[];drawPan();}};
+$("locate").onclick=function(){
+  if(!map||!navigator.geolocation){$("area").textContent="Location is not available on this device.";return;}
+  navigator.geolocation.getCurrentPosition(function(g){map.setView([g.coords.latitude,g.coords.longitude],18);},
+    function(){$("area").textContent="Could not get your location. Allow location access, or move the map by hand.";},{enableHighAccuracy:true,timeout:15000});
+};
+$("savepan").onclick=function(){
+  if(!map||!pts.length){$("area").textContent="Tap the map to mark your pan first.";return;}
+  var la=0,lo=0;pts.forEach(function(p){la+=p[0];lo+=p[1];});
+  PAN.lat=la/pts.length;PAN.lon=lo/pts.length;PAN.pts=pts.slice();PAN.area=polyArea(pts);PAN.name="your pan";
+  try{localStorage.setItem("mithagar-pan",JSON.stringify({lat:PAN.lat,lon:PAN.lon,area:PAN.area,pts:PAN.pts}));}catch(e){}
+  $("mapview").classList.remove("open");renderCond();
+  me("Pan saved");
+  bot("<p>Pan saved"+(PAN.area?": about <b>"+Math.round(PAN.area)+" m²</b>":" as a location. Mark three or more corners to get its area")+". Getting the forecast for this spot…</p>");
+  start(false);
+};
+
+function loadLive(){
+  var url="https://api.open-meteo.com/v1/forecast?latitude="+PAN.lat.toFixed(4)+"&longitude="+PAN.lon.toFixed(4)+
+    "&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,shortwave_radiation,precipitation&forecast_hours=24&timezone=Asia%2FKolkata";
+  return fetch(url).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).then(function(j){
+    var h=j.hourly;
+    function vals(k){return h[k].filter(function(x){return x!==null&&x!==undefined;});}
+    function sum(a){return a.reduce(function(p,c){return p+c;},0);}
+    var t=vals("temperature_2m"),rh=vals("relative_humidity_2m"),wd=vals("wind_speed_10m");
+    if(!t.length||!rh.length||!wd.length)throw new Error("empty forecast");
+    W.tmean=sum(t)/t.length;
+    W.temp=Math.round(Math.max.apply(null,t));
+    W.rh=Math.round(sum(rh)/rh.length);
+    W.wind=Math.round(sum(wd)/wd.length);                    // km/h
+    W.rs=sum(vals("shortwave_radiation"))*3600/1e6;          // hourly W/m2 to MJ/m2 over 24 h
+    W.rain=Math.round(sum(vals("precipitation"))*10)/10;
+    W.sky=W.rs>=19?"clear":W.rs>=13?"partly":"cloudy";
+  });
+}
+function start(greet){
+  if(greet)bot("<p>Namaskar. I am the Mithagar Assistant. Getting the forecast for "+(PAN.name==="your pan"?"your pan":"the "+PAN.name)+"…</p>");
+  loadLive().then(function(){
+    $("src").textContent="Live forecast, next 24 h";
+    renderCond();fillPanel();
+    bot("<p>Here is today's advice from the live forecast for "+(PAN.name==="your pan"?"your pan":"the "+PAN.name)+"."+(PAN.pts.length?"":" Tap <b>My pan on map</b> to mark your own pan.")+"</p>");
+    today();
+  }).catch(function(){
+    $("src").textContent="Example weather";
+    bot("<p>I could not get the forecast, so this advice uses example weather. Check your internet, or tap <b>Change</b> at the top to enter the weather yourself.</p>");
+    today();
+  });
+}
 renderCond();fillPanel();
-bot("<p>Namaskar. I am the Mithagar Assistant. Getting the forecast for the "+PAN.name+"…</p>");
-loadLive().then(function(){
-  $("src").textContent="Live forecast, next 24 h";
-  renderCond();fillPanel();
-  bot("<p>Here is today's advice from the live forecast for the "+PAN.name+".</p>");
-  today();
-}).catch(function(){
-  $("src").textContent="Example weather";
-  bot("<p>I could not get the forecast, so this advice uses example weather. Check your internet, or tap <b>Change</b> at the top to enter the weather yourself.</p>");
-  today();
-});
+start(true);
 </script>
 </body>
 </html>
