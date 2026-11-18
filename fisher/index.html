@@ -45,7 +45,9 @@ main{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
 section{display:none;flex-direction:column;gap:12px}
 section.on{display:flex}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
-.notice{border-left:4px solid var(--bad);font-size:.88rem}
+.notice{border-left:4px solid var(--muted);font-size:.88rem;display:flex;flex-direction:column;gap:8px}
+.notice.n2{border-left-color:var(--bad)} .notice.n1{border-left-color:var(--warn)} .notice.n0{border-left-color:var(--good)}
+.notice ul{margin:0;padding-left:18px} .notice a{color:var(--accent)}
 .pill{display:inline-block;font-weight:600;font-size:.82rem;padding:3px 10px;border-radius:999px}
 .l0{background:var(--good-bg);color:var(--good)} .l1{background:var(--warn-bg);color:var(--warn)} .l2{background:var(--bad-bg);color:var(--bad)}
 .verdict{font-family:var(--display);font-size:1.7rem;font-weight:700;line-height:1.1;margin:6px 0}
@@ -86,7 +88,7 @@ td,th{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid var(--line)
 </header>
 <main>
 <section id="sea">
-  <div class="card notice"><b>Check official warnings first.</b> If INCOIS, IMD or the Fisheries Department has issued a warning, do not go, whatever this app shows. This is a forecast guide for one landing centre. It cannot see the sea. Trust your own eyes at the bar.</div>
+  <div class="card notice" id="official"></div>
   <div class="card" id="now"></div>
   <div class="card"><h2>Next 24 hours</h2><div class="strip" id="strip"></div><p class="muted" style="margin:8px 0 0">✓ looks OK · ! take care · ✕ do not go</p></div>
   <div class="card"><h2>Windows</h2><ul class="win" id="wins"></ul></div>
@@ -220,6 +222,16 @@ function monthTotals(trips,ym){
   });
   t.profit=t.income-t.cost; return t;
 }
+// Official alerts collected by the scheduled job. Unknown unless checked within the last 3 hours.
+function officialState(a,nowMs){
+  if(!a||!a.ok||!a.checked) return {state:"unknown",level:0,items:[]};
+  var age=(nowMs-Date.parse(a.checked))/3600000;
+  if(!(age>=-0.5&&age<3)) return {state:"unknown",level:0,items:[]};
+  var items=(a.alerts||[]).filter(function(x){return x.marine;});
+  if(!items.length) return {state:"none",level:0,items:[]};
+  var strong=/warning|not to venture|do not venture|cyclon|tsunami|red alert|orange/i;
+  return {state:"active",level:items.some(function(x){return strong.test(x.title);})?2:1,items:items};
+}
 //LOGIC-END
 
 var PLACES=[ // approximate positions just off each mouth or beach; check and correct with the group
@@ -241,6 +253,33 @@ function compass(d){return ["N","NE","E","SE","S","SW","W","NW"][Math.round(d/45
 function hourLabel(t){var h=parseInt(t.slice(11,13),10);return (h%12||12)+(h<12?" am":" pm");}
 function nowIST(){return new Date(Date.now()+5.5*3600000).toISOString().slice(0,13)+":00";}
 var LV=["Looks OK","Take care","Do not go"], SYM=["✓","!","✕"];
+var ALERTS_URL="https://raw.githubusercontent.com/luffy-178/Mithagar/alerts-data/alerts.json";
+var ALERTS=get("fisher-alerts",null), OFF={state:"unknown",level:0,items:[]};
+var LINKS='<span><a href="https://incois.gov.in/portal/osf/hwa.jsp">INCOIS high wave alerts</a> · <a href="https://mausam.imd.gov.in/imd_latest/contents/index_fisherman.php">IMD fishermen warning</a> · <a href="https://sachet.ndma.gov.in/">NDMA Sachet</a></span>';
+function manualOn(){return get("fisher-manual","")===nowIST().slice(0,10);}
+function loadAlerts(){
+  return fetch(ALERTS_URL+"?t="+Date.now(),{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+    .then(function(j){ALERTS=j;put("fisher-alerts",j);}).catch(function(){});
+}
+function renderOfficial(){
+  OFF=officialState(ALERTS,Date.now());
+  var man=manualOn(), el=$("official"), h, when=ALERTS&&ALERTS.checked?new Date(ALERTS.checked).toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+  if(man) OFF={state:"active",level:2,items:OFF.items,manual:true};
+  if(OFF.state==="active"){
+    h="<b>"+(OFF.level===2?"Official warning in force. Do not go.":"Official alert for Goa. Take care.")+"</b>";
+    if(OFF.items.length) h+="<ul>"+OFF.items.slice(0,5).map(function(x){return "<li>"+esc(x.title)+(x.agency?" <span class='muted'>("+esc(x.agency)+")</span>":"")+"</li>";}).join("")+"</ul>";
+    if(OFF.manual) h+="<span>You marked that you have seen an official warning today.</span>";
+  } else if(OFF.state==="none"){
+    h="<b>No official sea or weather alerts listed for Goa.</b><span class='muted'>Checked "+when+" from NDMA Sachet, which carries IMD and INCOIS alerts. Still look at the sky and the bar yourself.</span>";
+  } else {
+    h="<b>Could not check official warnings.</b><span>"+(when?"Last checked "+when+". ":"")+"Check them yourself before you go. If a warning is in force, do not go, whatever this app shows.</span>";
+  }
+  h+=LINKS+'<div><button type="button" class="ghost" id="manual">'+(man?"Remove my warning mark":"I have seen an official warning for today")+'</button></div>';
+  el.className="card notice "+(OFF.state==="active"?"n"+OFF.level:OFF.state==="none"?"n0":"");
+  el.innerHTML=h;
+  $("manual").onclick=function(){put("fisher-manual",man?"":nowIST().slice(0,10));render();};
+}
+function floor(st){if(OFF.level>st.level){st.level=OFF.level;st.why.unshift("official "+(OFF.level===2?"warning":"alert")+" in force");}return st;}
 
 function fetchJSON(u){return fetch(u).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
 function load(){
@@ -272,7 +311,7 @@ function hours(){ // merged hourly records from the current hour, up to 48
 }
 function renderSea(H){
   if(!H.length){$("now").innerHTML="<h2>No forecast yet</h2><p class='muted'>Connect to the internet and tap Refresh forecast.</p>";$("strip").innerHTML="";$("wins").innerHTML="";$("tide").innerHTML="";return;}
-  var p=place(), day=H.slice(0,24), st=day.map(function(h){return status(h,S.th,S.mouth);}), h0=day[0], s0=st[0];
+  var p=place(), day=H.slice(0,24), st=day.map(function(h){return floor(status(h,S.th,S.mouth));}), h0=day[0], s0=st[0];
   var noSea=h0.waveH==null;
   var html='<span class="muted">'+esc(p.name)+' · '+(S.boat==="canoe"?"canoe":"motorised small boat")+'</span><div class="verdict">'+LV[s0.level]+' now</div><span class="pill l'+s0.level+'">'+SYM[s0.level]+' '+hourLabel(h0.time)+'</span>';
   html+='<p style="margin:8px 0 0">'+(s0.why.length?"Because of "+esc(s0.why.join("; "))+".":"Wind, waves and the bar are all inside your limits by this forecast.")+'</p>';
@@ -332,7 +371,7 @@ function render(failed){
   if(FC){var d=new Date(FC.t);$("src").textContent=(failed?"Offline. ":"")+"Forecast from "+d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});}
   else $("src").textContent="No forecast. Check internet.";
   if(FC&&FC.place!==S.place) H=[];
-  renderSea(H);renderDry(H);renderTrips();
+  renderOfficial();renderSea(H);renderDry(H);renderTrips();
 }
 function fillSettings(){
   $("s-place").innerHTML=PLACES.map(function(p){return '<option value="'+p.id+'">'+p.name+'</option>';}).join("");
@@ -349,12 +388,12 @@ $("save-set").onclick=function(){
   put("fisher-set",S);$("setmsg").textContent="Saved.";
   if(changed) load(); else render();
 };
-$("refresh").onclick=function(){load();};
+$("refresh").onclick=function(){loadAlerts().then(render);load();};
 $("tripform").addEventListener("submit",function(e){
   e.preventDefault();
   var date=$("t-date").value; if(!date){$("tripmsg").textContent="Choose a date.";return;}
   var fc=null, H=hours();
-  if(date===nowIST().slice(0,10)&&H.length) fc=Math.max.apply(null,H.slice(0,12).map(function(h){return status(h,S.th,S.mouth).level;}));
+  if(date===nowIST().slice(0,10)&&H.length) fc=Math.max.apply(null,H.slice(0,12).map(function(h){return floor(status(h,S.th,S.mouth)).level;}));
   function n(id){var v=parseFloat($(id).value);return isNaN(v)?0:v;}
   trips.push({id:Date.now(),date:date,went:$("t-went").value,feel:$("t-feel").value,fuel:n("t-fuel"),ice:n("t-ice"),crew:n("t-crew"),other:n("t-other"),kg:n("t-kg"),value:n("t-value"),dry:n("t-dry"),fish:$("t-fish").value.trim(),place:S.place,boat:S.boat,fc:fc});
   put("fisher-trips",trips);e.target.reset();$("t-date").value=nowIST().slice(0,10);$("tripmsg").textContent="Saved.";renderTrips();
@@ -379,7 +418,7 @@ window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();def
 $("install").onclick=function(){if(deferred){deferred.prompt();deferred=null;$("install").hidden=true;}};
 if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(function(){});}
 $("t-date").value=nowIST().slice(0,10);
-fillSettings();route();render();load();
+fillSettings();route();render();load();loadAlerts().then(function(){render();});
 </script>
 </body>
 </html>

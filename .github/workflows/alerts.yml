@@ -1,0 +1,31 @@
+name: Official alerts for Goa
+on:
+  schedule:
+    - cron: "7,37 * * * *"     # twice an hour
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: alerts
+  cancel-in-progress: true
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch alerts
+        run: |
+          mkdir out
+          python fisher/tools/fetch_alerts.py out/alerts.json
+      - name: Publish to the alerts-data branch
+        run: |
+          cd out
+          git init -q -b alerts-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add alerts.json
+          git commit -q -m "Update official alerts"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" alerts-data
