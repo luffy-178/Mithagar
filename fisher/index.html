@@ -227,10 +227,10 @@ function officialState(a,nowMs){
   if(!a||!a.ok||!a.checked) return {state:"unknown",level:0,items:[]};
   var age=(nowMs-Date.parse(a.checked))/3600000;
   if(!(age>=-0.5&&age<3)) return {state:"unknown",level:0,items:[]};
-  var items=(a.alerts||[]).filter(function(x){return x.marine;});
+  var items=(a.alerts||[]).filter(function(x){return x.marine&&x.active!==false;});
   if(!items.length) return {state:"none",level:0,items:[]};
   var strong=/warning|not to venture|do not venture|cyclon|tsunami|red alert|orange/i;
-  return {state:"active",level:items.some(function(x){return strong.test(x.title);})?2:1,items:items};
+  return {state:"active",level:items.some(function(x){return strong.test(x.title)||/severe|extreme/i.test(x.severity||"");})?2:1,items:items};
 }
 //LOGIC-END
 

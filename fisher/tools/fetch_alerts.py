@@ -9,7 +9,8 @@ import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 FEEDS = [
     ("https://sachet.ndma.gov.in/cap_public_website/rss/rss_goa.xml", False),    # state feed
@@ -52,12 +53,62 @@ def fetch(url):
         return r.read().decode("utf-8", "replace")
 
 
+def parse_time(text):
+    """RSS (RFC 822) or CAP (ISO 8601) time to an aware datetime, or None."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    for fn in (datetime.fromisoformat, parsedate_to_datetime):
+        try:
+            d = fn(text)
+            return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+    return None
+
+
+def cap_details(xml_text):
+    """Expiry, severity, event and area from one CAP message."""
+    root = ET.fromstring(xml_text)
+    d = {}
+    for el in root.iter():
+        k = local(el.tag)
+        if k in ("expires", "severity", "event", "areadesc", "effective", "onset") and k not in d and (el.text or "").strip():
+            d[k] = el.text.strip()
+    return d
+
+
+def add_validity(alerts, now):
+    """Mark each alert active or not. Uses the CAP expiry time; without it, alerts count for 24 hours."""
+    looked = 0
+    for a in alerts:
+        pub = parse_time(a["published"])
+        a["active"] = False
+        if pub is None or now - pub > timedelta(days=6):
+            continue
+        exp = None
+        if a["link"] and looked < 20:
+            looked += 1
+            try:
+                d = cap_details(fetch(a["link"]))
+                a["severity"] = d.get("severity", "")
+                a["event"] = d.get("event", "")
+                a["area"] = d.get("areadesc", "")[:300]
+                a["expires"] = d.get("expires", "")
+                exp = parse_time(a["expires"])
+            except Exception:
+                pass
+        a["active"] = (exp > now) if exp else (now - pub < timedelta(hours=24))
+
+
 def main(path):
     result = {"checked": datetime.now(timezone.utc).isoformat(timespec="seconds"), "ok": False, "source": "", "error": "", "alerts": []}
     errors = []
     for url, goa_only in FEEDS:
         try:
             result["alerts"] = parse(fetch(url), goa_only)
+            add_validity(result["alerts"], datetime.now(timezone.utc))
+            result["alerts"] = [a for a in result["alerts"] if a["active"]]
             result["ok"] = True
             result["source"] = url
             break
