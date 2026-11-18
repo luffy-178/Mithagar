@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fisher Assistant</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f5f6b">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: phone-first single column. Tabs for Sea, Trips, Drying, Settings. Summary first, detail below. */
+  --bg:#e8eef0; --surface:#ffffff; --ink:#14262c; --muted:#56696f; --line:#cbd7da;
+  --accent:#0f5f6b; --accent-ink:#ffffff;
+  --good:#1f7a4d; --warn:#9a5b00; --bad:#b3261e;
+  --good-bg:#dff1e7; --warn-bg:#fbedd0; --bad-bg:#fbe1df;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){color-scheme:dark;
+    --bg:#0f181b; --surface:#19262a; --ink:#e4ecee; --muted:#96a8ad; --line:#2f4046;
+    --accent:#5cc4d2; --accent-ink:#06191c;
+    --good:#6fd09a; --warn:#f0b65a; --bad:#f28b82; --good-bg:#16332a; --warn-bg:#3a2c10; --bad-bg:#3d1c1a;}
+}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#0f181b; --surface:#19262a; --ink:#e4ecee; --muted:#96a8ad; --line:#2f4046;
+  --accent:#5cc4d2; --accent-ink:#06191c;
+  --good:#6fd09a; --warn:#f0b65a; --bad:#f28b82; --good-bg:#16332a; --warn-bg:#3a2c10; --bad-bg:#3d1c1a;}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45}
+.app{max-width:600px;margin:0 auto;padding-bottom:32px}
+header{background:var(--surface);border-bottom:1px solid var(--line);padding:12px 16px 0;position:sticky;top:0;z-index:5}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+h1{font-family:var(--display);font-size:1.35rem;margin:0}
+h2{font-family:var(--display);font-size:1.05rem;margin:0 0 8px;text-wrap:balance}
+.src{font-size:.75rem;color:var(--muted);text-align:right}
+nav{display:flex;gap:4px;margin-top:10px;overflow-x:auto}
+nav a{flex:none;padding:8px 12px;color:var(--muted);text-decoration:none;font-weight:600;font-size:.9rem;border-bottom:3px solid transparent}
+nav a.on{color:var(--accent);border-bottom-color:var(--accent)}
+main{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+section{display:none;flex-direction:column;gap:12px}
+section.on{display:flex}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
+.notice{border-left:4px solid var(--bad);font-size:.88rem}
+.pill{display:inline-block;font-weight:600;font-size:.82rem;padding:3px 10px;border-radius:999px}
+.l0{background:var(--good-bg);color:var(--good)} .l1{background:var(--warn-bg);color:var(--warn)} .l2{background:var(--bad-bg);color:var(--bad)}
+.verdict{font-family:var(--display);font-size:1.7rem;font-weight:700;line-height:1.1;margin:6px 0}
+.muted{color:var(--muted);font-size:.85rem}
+.facts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.fact{border:1px solid var(--line);border-radius:8px;padding:8px}
+.fact b{display:block;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.fact span{font-size:.75rem;color:var(--muted)}
+.strip{display:grid;grid-template-columns:repeat(12,1fr);gap:3px}
+.cell{border-radius:6px;padding:4px 0;text-align:center;font-size:.66rem;font-variant-numeric:tabular-nums;line-height:1.25}
+.cell i{display:block;font-style:normal;font-weight:700;font-size:.85rem}
+ul.win{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.win li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:.9rem}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted)}
+input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%}
+.full{grid-column:1/-1}
+button{font:inherit;cursor:pointer}
+.btn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:9px 16px;font-weight:600}
+.ghost{background:var(--surface);color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:8px 14px;font-weight:500;font-size:.88rem}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:10px}
+.tile b{display:block;font-family:var(--display);font-size:1.25rem;font-variant-numeric:tabular-nums}
+.tile span{font-size:.75rem;color:var(--muted)}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-size:.82rem;font-variant-numeric:tabular-nums;width:100%;white-space:nowrap}
+td,th{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid var(--line)}
+.x{background:none;border:0;color:var(--bad);font-size:.8rem;text-decoration:underline;padding:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="top"><h1>Fisher Assistant</h1><div class="src" id="src">Loading forecast…</div></div>
+  <nav id="nav"><a href="#sea" data-t="sea">Sea today</a><a href="#trips" data-t="trips">Trips</a><a href="#drying" data-t="drying">Drying</a><a href="#settings" data-t="settings">Settings</a></nav>
+</header>
+<main>
+<section id="sea">
+  <div class="card notice"><b>Check official warnings first.</b> If INCOIS, IMD or the Fisheries Department has issued a warning, do not go, whatever this app shows. This is a forecast guide for one landing centre. It cannot see the sea. Trust your own eyes at the bar.</div>
+  <div class="card" id="now"></div>
+  <div class="card"><h2>Next 24 hours</h2><div class="strip" id="strip"></div><p class="muted" style="margin:8px 0 0">✓ looks OK · ! take care · ✕ do not go</p></div>
+  <div class="card"><h2>Windows</h2><ul class="win" id="wins"></ul></div>
+  <div class="card"><h2>Tide</h2><div id="tide"></div></div>
+  <div class="row"><button type="button" class="ghost" id="refresh">Refresh forecast</button><button type="button" class="ghost" id="install" hidden>Install app</button></div>
+</section>
+
+<section id="trips">
+  <div class="card"><h2>This month</h2><div class="tiles" id="tiles"></div></div>
+  <div class="card">
+    <h2>Add a day</h2>
+    <form id="tripform" class="grid">
+      <label for="t-date">Date<input id="t-date" type="date" required></label>
+      <label for="t-went">Did you go to sea?<select id="t-went"><option value="yes">Yes</option><option value="no-sea">No, sea was bad</option><option value="no-other">No, other reason</option></select></label>
+      <label for="t-feel" class="full">How was the sea compared with the forecast?<select id="t-feel"><option value="">Not sure</option><option value="calmer">Calmer than forecast</option><option value="same">As forecast</option><option value="rougher">Rougher than forecast</option></select></label>
+      <label for="t-fuel">Fuel (₹)<input id="t-fuel" type="number" inputmode="decimal" min="0"></label>
+      <label for="t-ice">Ice (₹)<input id="t-ice" type="number" inputmode="decimal" min="0"></label>
+      <label for="t-crew">Crew share (₹)<input id="t-crew" type="number" inputmode="decimal" min="0"></label>
+      <label for="t-other">Other costs (₹)<input id="t-other" type="number" inputmode="decimal" min="0"></label>
+      <label for="t-kg">Catch (kg)<input id="t-kg" type="number" inputmode="decimal" min="0"></label>
+      <label for="t-value">Catch sold for (₹)<input id="t-value" type="number" inputmode="decimal" min="0"></label>
+      <label for="t-dry">Kept for drying (kg)<input id="t-dry" type="number" inputmode="decimal" min="0"></label>
+      <label for="t-fish">Main fish<input id="t-fish" type="text" maxlength="40"></label>
+      <div class="full row"><button type="submit" class="btn">Save day</button><span class="muted" id="tripmsg"></span></div>
+    </form>
+  </div>
+  <div class="card"><h2>Saved days</h2><div class="scroll" id="triptable"></div><div class="row" style="margin-top:10px"><button type="button" class="ghost" id="csv">Download as spreadsheet (CSV)</button></div><p class="muted" style="margin:8px 0 0">Saved on this phone only.</p></div>
+</section>
+
+<section id="drying">
+  <div class="card" id="dry-today"></div>
+  <div class="card" id="dry-tom"></div>
+  <div class="card"><h2>How long will it take?</h2><div class="scroll" id="dry-days"></div><p class="muted" style="margin:8px 0 0">Rough guide in open sun on racks. Drying times are starting values and need checking against real batches.</p></div>
+</section>
+
+<section id="settings">
+  <div class="card">
+    <h2>Landing centre and boat</h2>
+    <div class="grid">
+      <label for="s-place" class="full">Landing centre<select id="s-place"></select></label>
+      <label for="s-boat">Boat<select id="s-boat"><option value="canoe">Canoe or small outrigger</option><option value="motor">Motorised small boat</option></select></label>
+      <label for="s-mouth">River mouth or beach faces (degrees, 270 = west)<input id="s-mouth" type="number" min="0" max="359" step="5"></label>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Your limits</h2>
+    <p class="muted" style="margin:0 0 10px">Set these with the fishers of this landing centre. "Take care" starts at the first number, "do not go" at the second.</p>
+    <div class="grid">
+      <label for="s-w1">Wind, take care (km/h)<input id="s-w1" type="number" min="0" step="1"></label>
+      <label for="s-w2">Wind, do not go (km/h)<input id="s-w2" type="number" min="0" step="1"></label>
+      <label for="s-h1">Waves at sea, take care (m)<input id="s-h1" type="number" min="0" step="0.1"></label>
+      <label for="s-h2">Waves at sea, do not go (m)<input id="s-h2" type="number" min="0" step="0.1"></label>
+      <label for="s-b1">Bar or surf index, take care<input id="s-b1" type="number" min="0" step="0.1"></label>
+      <label for="s-b2">Bar or surf index, do not go<input id="s-b2" type="number" min="0" step="0.1"></label>
+      <div class="full row"><button type="button" class="btn" id="save-set">Save settings</button><button type="button" class="ghost" id="reset-set">Use starting values</button><span class="muted" id="setmsg"></span></div>
+    </div>
+    <p class="muted" style="margin:10px 0 0">Bar or surf index = swell height, raised for long-period swell, for swell running straight into the mouth, and for a falling tide.</p>
+  </div>
+</section>
+</main>
+</div>
+<script>
+//LOGIC-START
+function es(T){return 6.108*Math.exp(17.27*T/(T+237.3));}
+// Open-water evaporation mm/day (simplified Penman 1948). w: tmean C, rh %, wind km/h, rs MJ/m2/day
+function evap(w){
+  var e=es(w.tmean), ea=e*w.rh/100, delta=4098*e/Math.pow(w.tmean+237.3,2), gamma=0.665;
+  var rn=0.92*w.rs-(1.5+3*Math.min(1,w.rs/22)), u2=w.wind/3.6*0.75;
+  return Math.max(0,(delta/(delta+gamma))*rn/2.45+(gamma/(delta+gamma))*0.26*(1+0.54*u2)*(e-ea));
+}
+function angDiff(a,b){var d=Math.abs(a-b)%360;return d>180?360-d:d;}
+// Bar or surf index (m). h: swellH m, swellT s, swellDir deg (direction swell comes from), trend -1 ebb / 0 slack / 1 flood
+function barIndex(h,mouth){
+  var per=Math.min(1.5,Math.max(0.8,1+((h.swellT||8)-8)/10));
+  var align=Math.max(0.3,Math.cos(angDiff(h.swellDir==null?mouth:h.swellDir,mouth)*Math.PI/180));
+  return (h.swellH||0)*per*align*(h.trend<0?1.3:1);
+}
+var DEFAULTS={canoe:{w:[20,30],h:[1.0,1.5],b:[0.8,1.2]},motor:{w:[28,40],h:[1.5,2.0],b:[1.2,1.8]}};
+// Level 0 looks OK, 1 take care, 2 do not go; with the reasons
+function status(h,th,mouth){
+  var lv=0, why=[];
+  function chk(v,lim,txt){if(v>=lim[1]){lv=2;why.push(txt);}else if(v>=lim[0]){lv=Math.max(lv,1);why.push(txt);}}
+  var wind=Math.max(h.wind||0,0.75*(h.gust||0));
+  chk(wind,th.w,"wind "+Math.round(h.wind)+" km/h"+(h.gust?", gusts "+Math.round(h.gust):""));
+  if(h.waveH!=null) chk(h.waveH,th.h,"waves "+h.waveH.toFixed(1)+" m at sea");
+  var b=barIndex(h,mouth);
+  chk(b,th.b,(h.trend<0?"falling tide against ":"")+"swell "+(h.swellH||0).toFixed(1)+" m, "+Math.round(h.swellT||0)+" s at the bar");
+  if(h.code>=95){lv=2;why.push("thunderstorm");}
+  else if((h.rain||0)>=7.5){lv=Math.max(lv,1);why.push("heavy rain, poor visibility");}
+  return {level:lv,why:why,bar:b};
+}
+function tideTrend(s,i){
+  if(!s||s[i]==null) return 0;
+  var d=(s[i+1]!=null)?s[i+1]-s[i]:(s[i-1]!=null?s[i]-s[i-1]:0);
+  return d>0.03?1:d<-0.03?-1:0;
+}
+// Runs of equal level: [{level,from,to}] with to exclusive
+function windows(levels){
+  var out=[];
+  for(var i=0;i<levels.length;i++){
+    if(out.length&&out[out.length-1].level===levels[i]) out[out.length-1].to=i+1;
+    else out.push({level:levels[i],from:i,to:i+1});
+  }
+  return out;
+}
+// High and low waters in a sea-level series: [{i,type,h}]
+function tideTurns(s,from,to){
+  var out=[];
+  for(var i=Math.max(1,from);i<Math.min(s.length-1,to);i++){
+    if(s[i]==null||s[i-1]==null||s[i+1]==null) continue;
+    if(s[i]>=s[i-1]&&s[i]>s[i+1]) out.push({i:i,type:"High",h:s[i]});
+    if(s[i]<=s[i-1]&&s[i]<s[i+1]) out.push({i:i,type:"Low",h:s[i]});
+  }
+  return out;
+}
+var FISH={small:{name:"Small fish (anchovy, small prawns)",base:1.5},medium:{name:"Medium fish, split (mackerel, sardine)",base:2.5},large:{name:"Large pieces, salted (shark, ray, seer)",base:4}};
+function dryDays(base,E){return Math.min(base*3,Math.max(base*0.7,base*6/Math.max(E,1)));}
+function dryRating(E,rain){
+  if(rain>=5) return {level:2,label:"Do not dry outside"};
+  if(rain>=1) return {level:1,label:"Risky, rain expected"};
+  if(E>=6) return {level:0,label:"Good drying day"};
+  if(E>=3.5) return {level:1,label:"Slow drying day"};
+  return {level:2,label:"Poor drying day"};
+}
+function monthTotals(trips,ym){
+  var t={days:0,went:0,income:0,cost:0,kg:0,nosea:0};
+  trips.forEach(function(x){
+    if(x.date.slice(0,7)!==ym) return;
+    t.days++; if(x.went==="yes") t.went++; if(x.went==="no-sea") t.nosea++;
+    t.income+=x.value||0; t.cost+=(x.fuel||0)+(x.ice||0)+(x.crew||0)+(x.other||0); t.kg+=x.kg||0;
+  });
+  t.profit=t.income-t.cost; return t;
+}
+//LOGIC-END
+
+var PLACES=[ // approximate positions just off each mouth or beach; check and correct with the group
+  {id:"chapora",name:"Chapora river mouth",lat:15.607,lon:73.725,mouth:270},
+  {id:"aguada",name:"Aguada bar (Mandovi), for Malim",lat:15.480,lon:73.760,mouth:270},
+  {id:"colva",name:"Colva / Benaulim beach",lat:15.275,lon:73.900,mouth:250},
+  {id:"betul",name:"Betul (Sal river mouth), for Cutbona",lat:15.140,lon:73.940,mouth:260},
+  {id:"talpona",name:"Talpona river mouth",lat:14.985,lon:74.030,mouth:250}
+];
+var $=function(id){return document.getElementById(id);};
+function get(k,d){try{var v=JSON.parse(localStorage.getItem(k));return v==null?d:v;}catch(e){return d;}}
+function put(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+var S=get("fisher-set",null)||{place:"betul",boat:"canoe",mouth:260,th:JSON.parse(JSON.stringify(DEFAULTS.canoe))};
+var FC=get("fisher-fc",null), trips=get("fisher-trips",[]);
+function place(){return PLACES.filter(function(p){return p.id===S.place;})[0]||PLACES[0];}
+function esc(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML;}
+function rupee(n){return "₹"+Math.round(n).toLocaleString("en-IN");}
+function compass(d){return ["N","NE","E","SE","S","SW","W","NW"][Math.round(d/45)%8];}
+function hourLabel(t){var h=parseInt(t.slice(11,13),10);return (h%12||12)+(h<12?" am":" pm");}
+function nowIST(){return new Date(Date.now()+5.5*3600000).toISOString().slice(0,13)+":00";}
+var LV=["Looks OK","Take care","Do not go"], SYM=["✓","!","✕"];
+
+function fetchJSON(u){return fetch(u).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
+function load(){
+  var p=place(), q="latitude="+p.lat+"&longitude="+p.lon+"&forecast_days=3&timezone=Asia%2FKolkata";
+  $("src").textContent="Loading forecast…";
+  var wx=fetchJSON("https://api.open-meteo.com/v1/forecast?"+q+"&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,shortwave_radiation,precipitation,weather_code");
+  var sea=fetchJSON("https://marine-api.open-meteo.com/v1/marine?"+q+"&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_direction,swell_wave_period");
+  var tide=fetchJSON("https://marine-api.open-meteo.com/v1/marine?"+q+"&hourly=sea_level_height_msl").catch(function(){return null;});
+  return Promise.all([wx,sea.catch(function(){return null;}),tide]).then(function(r){
+    FC={t:Date.now(),place:p.id,wx:r[0].hourly,sea:r[1]?r[1].hourly:null,tide:r[2]?r[2].hourly.sea_level_height_msl:null};
+    put("fisher-fc",FC);render();
+  }).catch(function(){render(true);});
+}
+function hours(){ // merged hourly records from the current hour, up to 48
+  if(!FC||!FC.wx) return [];
+  var i0=FC.wx.time.indexOf(nowIST()); if(i0<0) i0=0;
+  var out=[];
+  for(var i=i0;i<Math.min(FC.wx.time.length,i0+48);i++){
+    var s=FC.sea, hasSwell=s&&s.swell_wave_height&&s.swell_wave_height[i]!=null;
+    out.push({time:FC.wx.time[i],temp:FC.wx.temperature_2m[i],rh:FC.wx.relative_humidity_2m[i],wind:FC.wx.wind_speed_10m[i],gust:FC.wx.wind_gusts_10m[i],
+      rs:FC.wx.shortwave_radiation[i],rain:FC.wx.precipitation[i]||0,code:FC.wx.weather_code[i],
+      waveH:s?s.wave_height[i]:null,
+      swellH:s?(hasSwell?s.swell_wave_height[i]:s.wave_height[i]):null,
+      swellT:s?(hasSwell?s.swell_wave_period[i]:s.wave_period[i]):null,
+      swellDir:s?(hasSwell?s.swell_wave_direction[i]:s.wave_direction[i]):null,
+      trend:tideTrend(FC.tide,i),level:FC.tide?FC.tide[i]:null,idx:i});
+  }
+  return out;
+}
+function renderSea(H){
+  if(!H.length){$("now").innerHTML="<h2>No forecast yet</h2><p class='muted'>Connect to the internet and tap Refresh forecast.</p>";$("strip").innerHTML="";$("wins").innerHTML="";$("tide").innerHTML="";return;}
+  var p=place(), day=H.slice(0,24), st=day.map(function(h){return status(h,S.th,S.mouth);}), h0=day[0], s0=st[0];
+  var noSea=h0.waveH==null;
+  var html='<span class="muted">'+esc(p.name)+' · '+(S.boat==="canoe"?"canoe":"motorised small boat")+'</span><div class="verdict">'+LV[s0.level]+' now</div><span class="pill l'+s0.level+'">'+SYM[s0.level]+' '+hourLabel(h0.time)+'</span>';
+  html+='<p style="margin:8px 0 0">'+(s0.why.length?"Because of "+esc(s0.why.join("; "))+".":"Wind, waves and the bar are all inside your limits by this forecast.")+'</p>';
+  if(noSea) html+='<p class="pill l1" style="margin-top:8px">No wave forecast available. This verdict uses wind only. Do not rely on it.</p>';
+  html+='<div class="facts"><div class="fact"><b>'+Math.round(h0.wind)+' km/h</b><span>wind, gusts '+Math.round(h0.gust||0)+'</span></div>'+
+    '<div class="fact"><b>'+(noSea?"–":h0.waveH.toFixed(1)+" m")+'</b><span>waves at sea</span></div>'+
+    '<div class="fact"><b>'+(noSea?"–":h0.swellH.toFixed(1)+" m, "+Math.round(h0.swellT)+" s")+'</b><span>swell'+(noSea?"":" from "+compass(h0.swellDir))+'</span></div>'+
+    '<div class="fact"><b>'+(FC.tide?(h0.trend>0?"Rising":h0.trend<0?"Falling":"Slack"):"–")+'</b><span>tide</span></div></div>';
+  $("now").innerHTML=html;
+  $("strip").innerHTML=day.map(function(h,i){return '<div class="cell l'+st[i].level+'" title="'+esc(st[i].why.join("; "))+'">'+hourLabel(h.time).replace(" ","")+'<i>'+SYM[st[i].level]+'</i></div>';}).join("");
+  var W=windows(st.map(function(x){return x.level;}));
+  $("wins").innerHTML=W.map(function(w){
+    var worst=st.slice(w.from,w.to).sort(function(a,b){return b.why.length-a.why.length;})[0];
+    var end=w.to<day.length?hourLabel(day[w.to].time):"end of forecast day";
+    return '<li><span class="pill l'+w.level+'">'+SYM[w.level]+' '+LV[w.level]+'</span><b>'+hourLabel(day[w.from].time)+' to '+end+'</b>'+(w.level&&worst.why.length?'<span class="muted">'+esc(worst.why.join("; "))+'</span>':'')+'</li>';
+  }).join("");
+  if(FC.tide){
+    var turns=tideTurns(FC.tide,h0.idx,h0.idx+24);
+    $("tide").innerHTML=turns.length?'<ul class="win">'+turns.map(function(t){return '<li><b>'+t.type+' water about '+hourLabel(FC.wx.time[t.i])+'</b><span class="muted">'+(t.h>=0?"+":"")+t.h.toFixed(1)+' m from mean sea level</span></li>';}).join("")+'</ul><p class="muted" style="margin:8px 0 0">From a global ocean model, to the nearest hour. Not a tide table. Check against the port tide table.</p>':'<p class="muted">No high or low water found in the next 24 hours of data.</p>';
+  } else $("tide").innerHTML='<p class="muted">Tide data is not available, so the falling-tide effect at the bar is not included. Use the port tide table.</p>';
+}
+function dayWeather(H,from){
+  var d=H.slice(from,from+24); if(d.length<12) return null;
+  function avg(k){return d.reduce(function(a,h){return a+(h[k]||0);},0)/d.length;}
+  var w={tmean:avg("temp"),rh:avg("rh"),wind:avg("wind"),rs:d.reduce(function(a,h){return a+(h.rs||0);},0)*3600/1e6*(24/d.length),rain:d.reduce(function(a,h){return a+h.rain;},0)};
+  w.E=evap(w); w.first=null;
+  for(var i=0;i<d.length;i++) if(d[i].rain>=0.3){w.first=d[i].time;break;}
+  return w;
+}
+function renderDry(H){
+  var a=dayWeather(H,0), b=dayWeather(H,24);
+  function card(w,title){
+    if(!w) return "<h2>"+title+"</h2><p class='muted'>No forecast available.</p>";
+    var r=dryRating(w.E,w.rain);
+    var h='<span class="muted">'+title+'</span><div class="verdict">'+r.label+'</div><span class="pill l'+r.level+'">Drying power '+w.E.toFixed(1)+' mm</span>';
+    h+='<p style="margin:8px 0 0">'+(w.first?"Rain expected from about <b>"+hourLabel(w.first)+"</b> ("+w.rain.toFixed(1)+" mm in all). Cover the fish or bring it in before then.":"No rain expected.")+'</p>';
+    if(w.rh>=80) h+='<p style="margin:6px 0 0">Air is very humid ('+Math.round(w.rh)+'%). Bring the fish under cover at night so it does not take up moisture again.</p>';
+    if(w.wind>=25) h+='<p style="margin:6px 0 0">Windy ('+Math.round(w.wind)+' km/h). Use raised racks to keep sand off the fish.</p>';
+    return h;
+  }
+  $("dry-today").innerHTML=card(a,"Next 24 hours");
+  $("dry-tom").innerHTML=card(b,"The 24 hours after");
+  var E=a?a.E:6;
+  $("dry-days").innerHTML="<table><tr><th>Fish</th><th>Days in this weather</th></tr>"+Object.keys(FISH).map(function(k){var d=dryDays(FISH[k].base,E);return "<tr><td>"+FISH[k].name+"</td><td>"+(Math.round(d*2)/2)+"</td></tr>";}).join("")+"</table>";
+}
+function renderTrips(){
+  var ym=nowIST().slice(0,7), t=monthTotals(trips,ym);
+  $("tiles").innerHTML='<div class="tile"><b>'+rupee(t.profit)+'</b><span>profit this month</span></div><div class="tile"><b>'+t.went+'</b><span>days at sea, '+t.nosea+' lost to bad sea</span></div><div class="tile"><b>'+rupee(t.income)+'</b><span>catch sold</span></div><div class="tile"><b>'+rupee(t.cost)+'</b><span>costs</span></div><div class="tile"><b>'+Math.round(t.kg)+' kg</b><span>catch</span></div><div class="tile"><b>'+(t.went?rupee(t.profit/t.went):"–")+'</b><span>profit per trip</span></div>';
+  if(!trips.length){$("triptable").innerHTML="<p class='muted'>No days saved yet.</p>";return;}
+  var FEEL={calmer:"calmer",same:"as forecast",rougher:"rougher","":""}, WENT={yes:"Went","no-sea":"Bad sea","no-other":"Stayed"};
+  $("triptable").innerHTML="<table><tr><th>Date</th><th>Sea</th><th>Forecast</th><th>Felt</th><th>Catch</th><th>Profit</th><th></th></tr>"+trips.slice().sort(function(a,b){return a.date<b.date?1:-1;}).slice(0,30).map(function(x){
+    var pr=(x.value||0)-(x.fuel||0)-(x.ice||0)-(x.crew||0)-(x.other||0);
+    return "<tr><td>"+esc(x.date)+"</td><td>"+WENT[x.went]+"</td><td>"+(x.fc==null?"":LV[x.fc])+"</td><td>"+FEEL[x.feel||""]+"</td><td>"+(x.kg||0)+" kg</td><td>"+(x.went==="yes"?rupee(pr):"")+"</td><td><button type='button' class='x' data-id='"+x.id+"'>Remove</button></td></tr>";}).join("")+"</table>";
+}
+function render(failed){
+  var H=hours();
+  if(FC){var d=new Date(FC.t);$("src").textContent=(failed?"Offline. ":"")+"Forecast from "+d.toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});}
+  else $("src").textContent="No forecast. Check internet.";
+  if(FC&&FC.place!==S.place) H=[];
+  renderSea(H);renderDry(H);renderTrips();
+}
+function fillSettings(){
+  $("s-place").innerHTML=PLACES.map(function(p){return '<option value="'+p.id+'">'+p.name+'</option>';}).join("");
+  $("s-place").value=S.place;$("s-boat").value=S.boat;$("s-mouth").value=S.mouth;
+  $("s-w1").value=S.th.w[0];$("s-w2").value=S.th.w[1];$("s-h1").value=S.th.h[0];$("s-h2").value=S.th.h[1];$("s-b1").value=S.th.b[0];$("s-b2").value=S.th.b[1];
+}
+function nv(id,d){var v=parseFloat($(id).value);return isNaN(v)?d:v;}
+$("s-place").onchange=function(){var p=PLACES.filter(function(x){return x.id===$("s-place").value;})[0];$("s-mouth").value=p.mouth;};
+$("s-boat").onchange=function(){var d=DEFAULTS[$("s-boat").value];$("s-w1").value=d.w[0];$("s-w2").value=d.w[1];$("s-h1").value=d.h[0];$("s-h2").value=d.h[1];$("s-b1").value=d.b[0];$("s-b2").value=d.b[1];};
+$("reset-set").onclick=function(){$("s-boat").onchange();};
+$("save-set").onclick=function(){
+  var changed=S.place!==$("s-place").value;
+  S={place:$("s-place").value,boat:$("s-boat").value,mouth:nv("s-mouth",270),th:{w:[nv("s-w1",20),nv("s-w2",30)],h:[nv("s-h1",1),nv("s-h2",1.5)],b:[nv("s-b1",0.8),nv("s-b2",1.2)]}};
+  put("fisher-set",S);$("setmsg").textContent="Saved.";
+  if(changed) load(); else render();
+};
+$("refresh").onclick=function(){load();};
+$("tripform").addEventListener("submit",function(e){
+  e.preventDefault();
+  var date=$("t-date").value; if(!date){$("tripmsg").textContent="Choose a date.";return;}
+  var fc=null, H=hours();
+  if(date===nowIST().slice(0,10)&&H.length) fc=Math.max.apply(null,H.slice(0,12).map(function(h){return status(h,S.th,S.mouth).level;}));
+  function n(id){var v=parseFloat($(id).value);return isNaN(v)?0:v;}
+  trips.push({id:Date.now(),date:date,went:$("t-went").value,feel:$("t-feel").value,fuel:n("t-fuel"),ice:n("t-ice"),crew:n("t-crew"),other:n("t-other"),kg:n("t-kg"),value:n("t-value"),dry:n("t-dry"),fish:$("t-fish").value.trim(),place:S.place,boat:S.boat,fc:fc});
+  put("fisher-trips",trips);e.target.reset();$("t-date").value=nowIST().slice(0,10);$("tripmsg").textContent="Saved.";renderTrips();
+});
+$("triptable").addEventListener("click",function(e){
+  var b=e.target.closest("button[data-id]"); if(!b) return;
+  trips=trips.filter(function(x){return String(x.id)!==b.dataset.id;});put("fisher-trips",trips);renderTrips();
+});
+$("csv").onclick=function(){
+  var cols=["date","place","boat","went","fc","feel","fuel","ice","crew","other","kg","value","dry","fish"];
+  var rows=[cols.join(",")].concat(trips.map(function(x){return cols.map(function(c){var v=x[c]==null?"":String(x[c]);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(",");}));
+  var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.join("\n")],{type:"text/csv"}));a.download="fisher-trips.csv";document.body.appendChild(a);a.click();a.remove();
+};
+function route(){
+  var t=(location.hash||"#sea").slice(1); if(!$(t)||["sea","trips","drying","settings"].indexOf(t)<0) t="sea";
+  ["sea","trips","drying","settings"].forEach(function(k){$(k).classList.toggle("on",k===t);});
+  Array.prototype.forEach.call($("nav").children,function(a){a.classList.toggle("on",a.dataset.t===t);});
+}
+window.addEventListener("hashchange",route);
+var deferred=null;
+window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();deferred=e;$("install").hidden=false;});
+$("install").onclick=function(){if(deferred){deferred.prompt();deferred=null;$("install").hidden=true;}};
+if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(function(){});}
+$("t-date").value=nowIST().slice(0,10);
+fillSettings();route();render();load();
+</script>
+</body>
+</html>
